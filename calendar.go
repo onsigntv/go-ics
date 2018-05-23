@@ -4,12 +4,14 @@ import "time"
 
 // Calendar represents a single calendar with events
 type Calendar struct {
-	Name        string
-	Description string
-	URL         string
-	Version     float64
-	Timezone    *time.Location
-	Events      []Event
+	Name              string
+	Description       string
+	URL               string
+	Version           float64
+	Timezone          *time.Location
+	Events            []Event
+	TraceErrFunc      traceErrFunc
+	convertDatesToUTC bool
 }
 
 // NewCalendar returns a new empty calendar instance
