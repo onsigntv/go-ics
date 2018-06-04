@@ -24,6 +24,7 @@ type Event struct {
 	Attendees     []Attendee
 	Organizer     Attendee
 	WholeDayEvent bool
+	ExDates       []time.Time
 }
 
 type byDate []Event

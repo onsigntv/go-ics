@@ -11,9 +11,24 @@ import (
 	"time"
 )
 
+type traceErrFunc func(err error) bool
+type timezoneLocationError struct {
+	location string
+}
+type timezoneLocationCompatibilityError struct {
+	originalLocation      string
+	compatibilityLocation string
+}
+
+func (e *timezoneLocationError) Error() string { return e.location }
+func (e *timezoneLocationCompatibilityError) Error() string {
+	return fmt.Sprintf("%s mapped to %s", e.originalLocation, e.compatibilityLocation)
+}
+
 var (
-	urlRegex    = regexp.MustCompile(`https?:\/\/`)
-	eventsRegex = regexp.MustCompile(`(BEGIN:VEVENT(.*\n)*?END:VEVENT\r?\n)`)
+	urlRegex                           = regexp.MustCompile(`https?:\/\/`)
+	eventsRegex                        = regexp.MustCompile(`(BEGIN:VEVENT(.*\n)*?END:VEVENT\r?\n)`)
+	timezoneLocationCompatibilityRegex = regexp.MustCompile(`\s[0-9]`)
 
 	calNameRegex     = regexp.MustCompile(`X-WR-CALNAME:.*?\n`)
 	calDescRegex     = regexp.MustCompile(`X-WR-CALDESC:.*?\n`)
@@ -54,6 +69,161 @@ var (
 	freqRegex     = regexp.MustCompile(`FREQ=.*?;`)
 	byMonthRegex  = regexp.MustCompile(`BYMONTH=.*?;`)
 	byDayRegex    = regexp.MustCompile(`BYDAY=.*?(;|){0,1}\z`)
+
+	nonStandardTimezones = map[string]string{
+		"Egypt Standard Time":             "Africa/Cairo",
+		"Morocco Standard Time":           "Africa/Casablanca",
+		"South Africa Standard Time":      "Africa/Johannesburg",
+		"W. Central Africa Standard Time": "Africa/Lagos",
+		"E. Africa Standard Time":         "Africa/Nairobi",
+		"Libya Standard Time":             "Africa/Tripoli",
+		"Namibia Standard Time":           "Africa/Windhoek",
+		"Aleutian Standard Time":          "America/Adak",
+		"Alaskan Standard Time":           "America/Anchorage",
+		"Tocantins Standard Time":         "America/Araguaina",
+		"Paraguay Standard Time":          "America/Asuncion",
+		"Bahia Standard Time":             "America/Bahia",
+		"SA Pacific Standard Time":        "America/Bogota",
+		"Argentina Standard Time":         "America/Buenos_Aires",
+		"Eastern Standard Time (Mexico)":  "America/Cancun",
+		"Venezuela Standard Time":         "America/Caracas",
+		"SA Eastern Standard Time":        "America/Cayenne",
+		"Central Standard Time":           "America/Chicago",
+		"Mountain Standard Time (Mexico)": "America/Chihuahua",
+		"Central Brazilian Standard Time": "America/Cuiaba",
+		"Mountain Standard Time":          "America/Denver",
+		"Greenland Standard Time":         "America/Godthab",
+		"Turks And Caicos Standard Time":  "America/Grand_Turk",
+		"Central America Standard Time":   "America/Guatemala",
+		"Atlantic Standard Time":          "America/Halifax",
+		"Cuba Standard Time":              "America/Havana",
+		"US Eastern Standard Time":        "America/Indianapolis",
+		"SA Western Standard Time":        "America/La_Paz",
+		"Pacific Standard Time":           "America/Los_Angeles",
+		"Central Standard Time (Mexico)":  "America/Mexico_City",
+		"Saint Pierre Standard Time":      "America/Miquelon",
+		"Montevideo Standard Time":        "America/Montevideo",
+		"Eastern Standard Time":           "America/New_York",
+		"US Mountain Standard Time":       "America/Phoenix",
+		"Haiti Standard Time":             "America/Port-au-Prince",
+		"Magallanes Standard Time":        "America/Punta_Arenas",
+		"Canada Central Standard Time":    "America/Regina",
+		"Pacific SA Standard Time":        "America/Santiago",
+		"E. South America Standard Time":  "America/Sao_Paulo",
+		"Newfoundland Standard Time":      "America/St_Johns",
+		"Pacific Standard Time (Mexico)":  "America/Tijuana",
+		"Central Asia Standard Time":      "Asia/Almaty",
+		"Jordan Standard Time":            "Asia/Amman",
+		"Arabic Standard Time":            "Asia/Baghdad",
+		"Azerbaijan Standard Time":        "Asia/Baku",
+		"SE Asia Standard Time":           "Asia/Bangkok",
+		"Altai Standard Time":             "Asia/Barnaul",
+		"Middle East Standard Time":       "Asia/Beirut",
+		"India Standard Time":             "Asia/Calcutta",
+		"Transbaikal Standard Time":       "Asia/Chita",
+		"Sri Lanka Standard Time":         "Asia/Colombo",
+		"Syria Standard Time":             "Asia/Damascus",
+		"Bangladesh Standard Time":        "Asia/Dhaka",
+		"Arabian Standard Time":           "Asia/Dubai",
+		"West Bank Standard Time":         "Asia/Hebron",
+		"W. Mongolia Standard Time":       "Asia/Hovd",
+		"North Asia East Standard Time":   "Asia/Irkutsk",
+		"Israel Standard Time":            "Asia/Jerusalem",
+		"Afghanistan Standard Time":       "Asia/Kabul",
+		"Russia Time Zone 11":             "Asia/Kamchatka",
+		"Pakistan Standard Time":          "Asia/Karachi",
+		"Nepal Standard Time":             "Asia/Katmandu",
+		"North Asia Standard Time":        "Asia/Krasnoyarsk",
+		"Magadan Standard Time":           "Asia/Magadan",
+		"N. Central Asia Standard Time":   "Asia/Novosibirsk",
+		"Omsk Standard Time":              "Asia/Omsk",
+		"North Korea Standard Time":       "Asia/Pyongyang",
+		"Myanmar Standard Time":           "Asia/Rangoon",
+		"Arab Standard Time":              "Asia/Riyadh",
+		"Sakhalin Standard Time":          "Asia/Sakhalin",
+		"Korea Standard Time":             "Asia/Seoul",
+		"China Standard Time":             "Asia/Shanghai",
+		"Singapore Standard Time":         "Asia/Singapore",
+		"Russia Time Zone 10":             "Asia/Srednekolymsk",
+		"Taipei Standard Time":            "Asia/Taipei",
+		"West Asia Standard Time":         "Asia/Tashkent",
+		"Georgian Standard Time":          "Asia/Tbilisi",
+		"Iran Standard Time":              "Asia/Tehran",
+		"Tokyo Standard Time":             "Asia/Tokyo",
+		"Tomsk Standard Time":             "Asia/Tomsk",
+		"Ulaanbaatar Standard Time":       "Asia/Ulaanbaatar",
+		"Vladivostok Standard Time":       "Asia/Vladivostok",
+		"Yakutsk Standard Time":           "Asia/Yakutsk",
+		"Ekaterinburg Standard Time":      "Asia/Yekaterinburg",
+		"Caucasus Standard Time":          "Asia/Yerevan",
+		"Azores Standard Time":            "Atlantic/Azores",
+		"Cape Verde Standard Time":        "Atlantic/Cape_Verde",
+		"Greenwich Standard Time":         "Atlantic/Reykjavik",
+		"Cen. Australia Standard Time":    "Australia/Adelaide",
+		"E. Australia Standard Time":      "Australia/Brisbane",
+		"AUS Central Standard Time":       "Australia/Darwin",
+		"Aus Central W. Standard Time":    "Australia/Eucla",
+		"Tasmania Standard Time":          "Australia/Hobart",
+		"Lord Howe Standard Time":         "Australia/Lord_Howe",
+		"W. Australia Standard Time":      "Australia/Perth",
+		"AUS Eastern Standard Time":       "Australia/Sydney",
+		"UTC":                            "Etc/GMT",
+		"UTC-11":                         "Etc/GMT+11",
+		"Dateline Standard Time":         "Etc/GMT+12",
+		"UTC-02":                         "Etc/GMT+2",
+		"UTC-08":                         "Etc/GMT+8",
+		"UTC-09":                         "Etc/GMT+9",
+		"UTC+12":                         "Etc/GMT-12",
+		"UTC+13":                         "Etc/GMT-13",
+		"Astrakhan Standard Time":        "Europe/Astrakhan",
+		"W. Europe Standard Time":        "Europe/Berlin",
+		"GTB Standard Time":              "Europe/Bucharest",
+		"Central Europe Standard Time":   "Europe/Budapest",
+		"E. Europe Standard Time":        "Europe/Chisinau",
+		"Turkey Standard Time":           "Europe/Istanbul",
+		"Kaliningrad Standard Time":      "Europe/Kaliningrad",
+		"FLE Standard Time":              "Europe/Kiev",
+		"GMT Standard Time":              "Europe/London",
+		"Belarus Standard Time":          "Europe/Minsk",
+		"Russian Standard Time":          "Europe/Moscow",
+		"Romance Standard Time":          "Europe/Paris",
+		"Russia Time Zone 3":             "Europe/Samara",
+		"Saratov Standard Time":          "Europe/Saratov",
+		"Central European Standard Time": "Europe/Warsaw",
+		"Mauritius Standard Time":        "Indian/Mauritius",
+		"Samoa Standard Time":            "Pacific/Apia",
+		"New Zealand Standard Time":      "Pacific/Auckland",
+		"Bougainville Standard Time":     "Pacific/Bougainville",
+		"Chatham Islands Standard Time":  "Pacific/Chatham",
+		"Easter Island Standard Time":    "Pacific/Easter",
+		"Fiji Standard Time":             "Pacific/Fiji",
+		"Central Pacific Standard Time":  "Pacific/Guadalcanal",
+		"Hawaiian Standard Time":         "Pacific/Honolulu",
+		"Line Islands Standard Time":     "Pacific/Kiritimati",
+		"Marquesas Standard Time":        "Pacific/Marquesas",
+		"Norfolk Standard Time":          "Pacific/Norfolk",
+		"West Pacific Standard Time":     "Pacific/Port_Moresby",
+		"Tonga Standard Time":            "Pacific/Tongatapu",
+		// Additional non-standard timezones
+		"Mexico Standard Time 2":                                  "America/Chihuahua",
+		"E. South America Standard Time 1":                        "America/Sao_Paulo",
+		"U.S. Mountain Standard Time":                             "America/Phoenix",
+		"U.S. Eastern Standard Time":                              "America/Indianapolis",
+		"S.A. Pacific Standard Time":                              "America/Bogota",
+		"S.A. Western Standard Time":                              "America/La_Paz",
+		"Pacific S.A. Standard Time":                              "America/Santiago",
+		"Newfoundland and Labrador Standard Time":                 "America/St_Johns",
+		"S.A. Eastern Standard Time":                              "America/Cayenne",
+		"Mid-Atlantic Standard Time":                              "Atlantic/South_Georgia",
+		"Transitional Islamic State of Afghanistan Standard Time": "Asia/Kabul",
+		"S.E. Asia Standard Time":                                 "Asia/Bangkok",
+		"A.U.S. Central Standard Time":                            "Australia/Darwin",
+		"A.U.S. Eastern Standard Time":                            "Australia/Sydney",
+		"Fiji Islands Standard Time":                              "Pacific/Fiji",
+		"Azerbaijan Standard Time ":                               "America/Buenos_Aires",
+		"Armenian Standard Time":                                  "Asia/Yerevan",
+		"Kamchatka Standard Time":                                 "Asia/Kamchatka",
+	}
 )
 
 // ParseCalendar parses the calendar in the given url (can be a local path)
@@ -73,7 +243,7 @@ func ParseCalendar(url string, maxRepeats int, w io.Writer) (Calendar, error) {
 		}
 	}
 
-	return parseICalContent(content, url, maxRepeats)
+	return ParseICalContent(content, url, maxRepeats, false, nil)
 }
 
 func getICal(url string) (string, error) {
@@ -103,14 +273,22 @@ func getICal(url string) (string, error) {
 	return content, nil
 }
 
-func parseICalContent(content, url string, maxRepeats int) (Calendar, error) {
+// ParseICalContent parses the calendar content as a string.
+// An optional error tracing function can be passed.
+func ParseICalContent(content, url string, maxRepeats int, convertDatesToUTC bool, fn traceErrFunc) (Calendar, error) {
 	cal := NewCalendar()
 	eventsData, info := explodeICal(content)
 	cal.Name = parseICalName(info)
 	cal.Description = parseICalDesc(info)
 	cal.Version = parseICalVersion(info)
-	cal.Timezone = parseICalTimezone(info)
 	cal.URL = url
+
+	if fn == nil {
+		fn = func(err error) bool { return false }
+	}
+
+	cal.TraceErrFunc = fn
+	cal.convertDatesToUTC = convertDatesToUTC
 	err := parseEvents(&cal, eventsData, maxRepeats)
 	if err != nil {
 		return cal, err
@@ -178,16 +356,33 @@ func parseEvents(cal *Calendar, eventsData []string, maxRepeats int) error {
 
 		start, err := parseEventDate("DTSTART", eventData)
 		if err != nil {
-			return err
+			if _, ok := err.(*timezoneLocationError); ok {
+				cal.TraceErrFunc(fmt.Errorf("Unmapped timezone location '%s' for iCal '%s'. Falling back to UTC", err.Error(), cal.URL))
+			} else if _, ok := err.(*timezoneLocationCompatibilityError); ok {
+				cal.TraceErrFunc(fmt.Errorf("Compatibility mode used, '%s' for iCal '%s'", err.Error(), cal.URL))
+			} else {
+				return err
+			}
 		}
 
 		end, err := parseEventDate("DTEND", eventData)
 		if err != nil {
-			return err
+			if _, ok := err.(*timezoneLocationError); ok {
+				cal.TraceErrFunc(fmt.Errorf("Unmapped timezone location '%s' for iCal '%s'. Falling back to UTC", err.Error(), cal.URL))
+			} else if _, ok := err.(*timezoneLocationCompatibilityError); ok {
+				cal.TraceErrFunc(fmt.Errorf("Compatibility mode used, '%s' for iCal '%s'", err.Error(), cal.URL))
+			} else {
+				return err
+			}
 		}
 
 		if end.IsZero() {
 			end = time.Date(start.Year(), start.Month(), start.Day(), 23, 59, 59, 0, start.Location())
+		}
+
+		if cal.convertDatesToUTC {
+			start = start.UTC()
+			end = end.UTC()
 		}
 
 		wholeDay := start.Hour() == 0 && end.Hour() == 0 && start.Minute() == 0 && end.Minute() == 0 && start.Second() == 0 && end.Second() == 0
@@ -201,10 +396,11 @@ func parseEvents(cal *Calendar, eventsData []string, maxRepeats int) error {
 		event.Created = parseEventCreated(eventData)
 		event.Modified = parseEventModified(eventData)
 		event.RRule = parseEventRRule(eventData)
-		exclusions, err := parseExcludedDates(eventData)
+		exclusions, err := parseExcludedDates(eventData, cal.convertDatesToUTC)
 		if err != nil {
 			return err
 		}
+		event.ExDates = exclusions
 		event.RecurrenceID, err = parseEventRecurrenceID(eventData)
 		if err != nil {
 			return err
@@ -390,16 +586,47 @@ func parseDatetime(data string) (time.Time, error) {
 	}
 
 	if strings.Contains(dataTz, "TZID") {
-		location := strings.Split(dataTz, "=")[1]
-		timezone, err := time.LoadLocation(location)
-		if err != nil {
-			return t, err
-		}
+		loc, err := parseLocation(strings.Split(dataTz, "=")[1])
 
-		return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), timezone), nil
+		return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), loc), err
 	}
 
 	return t, nil
+}
+
+func parseLocation(location string) (*time.Location, error) {
+	timezone, err := time.LoadLocation(location)
+	if err != nil {
+		loc, found := nonStandardTimezones[location]
+		if found {
+			timezone, err = time.LoadLocation(loc)
+		} else {
+			trimmedLoc := timezoneLocationCompatibilityRegex.ReplaceAllString(location, "")
+			loc, found = nonStandardTimezones[trimmedLoc]
+			if found {
+				timezone, err = time.LoadLocation(loc)
+				if err != nil {
+					return timezone, err
+				}
+
+				err = &timezoneLocationCompatibilityError{
+					originalLocation:      location,
+					compatibilityLocation: trimmedLoc,
+				}
+			}
+		}
+
+		if timezone == nil {
+			timezone = time.UTC
+			err = &timezoneLocationError{
+				location: location,
+			}
+		}
+
+		return timezone, err
+	}
+
+	return timezone, nil
 }
 
 func parseDate(data string) (time.Time, error) {
@@ -410,7 +637,7 @@ func parseEventRRule(eventData string) string {
 	return trimField(eventRRuleRegex.FindString(eventData), "RRULE:")
 }
 
-func parseExcludedDates(eventData string) ([]time.Time, error) {
+func parseExcludedDates(eventData string, convertDatesToUTC bool) ([]time.Time, error) {
 	var dates []time.Time
 	excl := eventExDateRegex.FindAllStringSubmatch(eventData, -1)
 
@@ -419,7 +646,7 @@ func parseExcludedDates(eventData string) ([]time.Time, error) {
 			continue
 		}
 
-		tz, err := time.LoadLocation(e[1])
+		tz, err := parseLocation(e[1])
 		if err != nil {
 			return nil, err
 		}
@@ -434,7 +661,13 @@ func parseExcludedDates(eventData string) ([]time.Time, error) {
 			return nil, err
 		}
 
-		dates = append(dates, time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), tz))
+		t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), tz)
+
+		if convertDatesToUTC {
+			t = t.UTC()
+		}
+
+		dates = append(dates)
 	}
 
 	return dates, nil
