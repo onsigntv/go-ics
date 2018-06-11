@@ -639,7 +639,7 @@ func parseEventRRule(eventData string) string {
 
 func parseExcludedDates(eventData string, convertDatesToUTC bool) ([]time.Time, error) {
 	var dates []time.Time
-	excl := eventExDateRegex.FindAllStringSubmatch(eventData, -1)
+	excl := eventExDateRegex.FindAllStringSubmatch(strings.Replace(eventData, "\n", "", -1), -1)
 
 	for _, e := range excl {
 		if len(e) < 3 {
