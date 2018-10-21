@@ -167,43 +167,43 @@ var (
 		"Lord Howe Standard Time":         "Australia/Lord_Howe",
 		"W. Australia Standard Time":      "Australia/Perth",
 		"AUS Eastern Standard Time":       "Australia/Sydney",
-		"UTC":                            "Etc/GMT",
-		"UTC-11":                         "Etc/GMT+11",
-		"Dateline Standard Time":         "Etc/GMT+12",
-		"UTC-02":                         "Etc/GMT+2",
-		"UTC-08":                         "Etc/GMT+8",
-		"UTC-09":                         "Etc/GMT+9",
-		"UTC+12":                         "Etc/GMT-12",
-		"UTC+13":                         "Etc/GMT-13",
-		"Astrakhan Standard Time":        "Europe/Astrakhan",
-		"W. Europe Standard Time":        "Europe/Berlin",
-		"GTB Standard Time":              "Europe/Bucharest",
-		"Central Europe Standard Time":   "Europe/Budapest",
-		"E. Europe Standard Time":        "Europe/Chisinau",
-		"Turkey Standard Time":           "Europe/Istanbul",
-		"Kaliningrad Standard Time":      "Europe/Kaliningrad",
-		"FLE Standard Time":              "Europe/Kiev",
-		"GMT Standard Time":              "Europe/London",
-		"Belarus Standard Time":          "Europe/Minsk",
-		"Russian Standard Time":          "Europe/Moscow",
-		"Romance Standard Time":          "Europe/Paris",
-		"Russia Time Zone 3":             "Europe/Samara",
-		"Saratov Standard Time":          "Europe/Saratov",
-		"Central European Standard Time": "Europe/Warsaw",
-		"Mauritius Standard Time":        "Indian/Mauritius",
-		"Samoa Standard Time":            "Pacific/Apia",
-		"New Zealand Standard Time":      "Pacific/Auckland",
-		"Bougainville Standard Time":     "Pacific/Bougainville",
-		"Chatham Islands Standard Time":  "Pacific/Chatham",
-		"Easter Island Standard Time":    "Pacific/Easter",
-		"Fiji Standard Time":             "Pacific/Fiji",
-		"Central Pacific Standard Time":  "Pacific/Guadalcanal",
-		"Hawaiian Standard Time":         "Pacific/Honolulu",
-		"Line Islands Standard Time":     "Pacific/Kiritimati",
-		"Marquesas Standard Time":        "Pacific/Marquesas",
-		"Norfolk Standard Time":          "Pacific/Norfolk",
-		"West Pacific Standard Time":     "Pacific/Port_Moresby",
-		"Tonga Standard Time":            "Pacific/Tongatapu",
+		"UTC":                             "Etc/GMT",
+		"UTC-11":                          "Etc/GMT+11",
+		"Dateline Standard Time":          "Etc/GMT+12",
+		"UTC-02":                          "Etc/GMT+2",
+		"UTC-08":                          "Etc/GMT+8",
+		"UTC-09":                          "Etc/GMT+9",
+		"UTC+12":                          "Etc/GMT-12",
+		"UTC+13":                          "Etc/GMT-13",
+		"Astrakhan Standard Time":         "Europe/Astrakhan",
+		"W. Europe Standard Time":         "Europe/Berlin",
+		"GTB Standard Time":               "Europe/Bucharest",
+		"Central Europe Standard Time":    "Europe/Budapest",
+		"E. Europe Standard Time":         "Europe/Chisinau",
+		"Turkey Standard Time":            "Europe/Istanbul",
+		"Kaliningrad Standard Time":       "Europe/Kaliningrad",
+		"FLE Standard Time":               "Europe/Kiev",
+		"GMT Standard Time":               "Europe/London",
+		"Belarus Standard Time":           "Europe/Minsk",
+		"Russian Standard Time":           "Europe/Moscow",
+		"Romance Standard Time":           "Europe/Paris",
+		"Russia Time Zone 3":              "Europe/Samara",
+		"Saratov Standard Time":           "Europe/Saratov",
+		"Central European Standard Time":  "Europe/Warsaw",
+		"Mauritius Standard Time":         "Indian/Mauritius",
+		"Samoa Standard Time":             "Pacific/Apia",
+		"New Zealand Standard Time":       "Pacific/Auckland",
+		"Bougainville Standard Time":      "Pacific/Bougainville",
+		"Chatham Islands Standard Time":   "Pacific/Chatham",
+		"Easter Island Standard Time":     "Pacific/Easter",
+		"Fiji Standard Time":              "Pacific/Fiji",
+		"Central Pacific Standard Time":   "Pacific/Guadalcanal",
+		"Hawaiian Standard Time":          "Pacific/Honolulu",
+		"Line Islands Standard Time":      "Pacific/Kiritimati",
+		"Marquesas Standard Time":         "Pacific/Marquesas",
+		"Norfolk Standard Time":           "Pacific/Norfolk",
+		"West Pacific Standard Time":      "Pacific/Port_Moresby",
+		"Tonga Standard Time":             "Pacific/Tongatapu",
 		// Additional non-standard timezones
 		"Mexico Standard Time 2":                                  "America/Chihuahua",
 		"E. South America Standard Time 1":                        "America/Sao_Paulo",
@@ -281,6 +281,7 @@ func ParseICalContent(content, url string, maxRepeats int, convertDatesToUTC boo
 	cal.Name = parseICalName(info)
 	cal.Description = parseICalDesc(info)
 	cal.Version = parseICalVersion(info)
+	cal.Timezone = parseICalTimezone(info)
 	cal.URL = url
 
 	if fn == nil {
@@ -354,7 +355,7 @@ func parseEvents(cal *Calendar, eventsData []string, maxRepeats int) error {
 	for _, eventData := range eventsData {
 		event := NewEvent()
 
-		start, err := parseEventDate("DTSTART", eventData)
+		start, startTz, err := parseEventDate("DTSTART", eventData)
 		if err != nil {
 			if _, ok := err.(*timezoneLocationError); ok {
 				cal.TraceErrFunc(fmt.Errorf("Unmapped timezone location '%s' for iCal '%s'. Falling back to UTC", err.Error(), cal.URL))
@@ -365,7 +366,7 @@ func parseEvents(cal *Calendar, eventsData []string, maxRepeats int) error {
 			}
 		}
 
-		end, err := parseEventDate("DTEND", eventData)
+		end, endTz, err := parseEventDate("DTEND", eventData)
 		if err != nil {
 			if _, ok := err.(*timezoneLocationError); ok {
 				cal.TraceErrFunc(fmt.Errorf("Unmapped timezone location '%s' for iCal '%s'. Falling back to UTC", err.Error(), cal.URL))
@@ -374,6 +375,14 @@ func parseEvents(cal *Calendar, eventsData []string, maxRepeats int) error {
 			} else {
 				return err
 			}
+		}
+
+		if startTz == nil {
+			startTz = cal.Timezone
+		}
+
+		if endTz == nil {
+			endTz = cal.Timezone
 		}
 
 		if end.IsZero() {
@@ -401,7 +410,7 @@ func parseEvents(cal *Calendar, eventsData []string, maxRepeats int) error {
 			return err
 		}
 		event.ExDates = exclusions
-		event.RecurrenceID, err = parseEventRecurrenceID(eventData)
+		event.RecurrenceID, _, err = parseEventRecurrenceID(eventData)
 		if err != nil {
 			return err
 		}
@@ -409,6 +418,8 @@ func parseEvents(cal *Calendar, eventsData []string, maxRepeats int) error {
 		event.Location = parseEventLocation(eventData)
 		event.Start = start
 		event.End = end
+		event.StartTimezone = startTz
+		event.EndTimezone = endTz
 		event.WholeDayEvent = wholeDay
 		event.Attendees = parseEventAttendees(eventData)
 		event.Organizer = parseEventOrganizer(eventData)
@@ -532,16 +543,16 @@ func parseEventModified(eventData string) time.Time {
 	return t
 }
 
-func parseEventRecurrenceID(eventData string) (time.Time, error) {
+func parseEventRecurrenceID(eventData string) (time.Time, *time.Location, error) {
 	rec := eventRecurrenceIDRegex.FindString(eventData)
 	if rec == "" {
-		return time.Time{}, nil
+		return time.Time{}, nil, nil
 	}
 
 	return parseDatetime(rec)
 }
 
-func parseEventDate(start, eventData string) (time.Time, error) {
+func parseEventDate(start, eventData string) (time.Time, *time.Location, error) {
 	ts := eventDateRegex.FindAllString(eventData, -1)
 	t := findWithStart(start, ts)
 	tWholeDay := eventWholeDayRegex.FindString(t)
@@ -550,7 +561,7 @@ func parseEventDate(start, eventData string) (time.Time, error) {
 	}
 
 	if t == "" {
-		return time.Time{}, nil
+		return time.Time{}, nil, nil
 	}
 
 	return parseDatetime(t)
@@ -566,7 +577,7 @@ func findWithStart(start string, list []string) string {
 	return ""
 }
 
-func parseDatetime(data string) (time.Time, error) {
+func parseDatetime(data string) (time.Time, *time.Location, error) {
 	data = strings.TrimSpace(data)
 	var dataTz string
 	timeString := data
@@ -582,16 +593,16 @@ func parseDatetime(data string) (time.Time, error) {
 
 	t, err := time.Parse(icsFormat, timeString)
 	if err != nil {
-		return t, err
+		return t, nil, err
 	}
 
 	if strings.Contains(dataTz, "TZID") {
 		loc, err := parseLocation(strings.Split(dataTz, "=")[1])
 
-		return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), loc), err
+		return t, loc, err
 	}
 
-	return t, nil
+	return t, nil, nil
 }
 
 func parseLocation(location string) (*time.Location, error) {
@@ -629,7 +640,7 @@ func parseLocation(location string) (*time.Location, error) {
 	return timezone, nil
 }
 
-func parseDate(data string) (time.Time, error) {
+func parseDate(data string) (time.Time, *time.Location, error) {
 	return parseDatetime(data + "T000000")
 }
 

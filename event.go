@@ -25,6 +25,8 @@ type Event struct {
 	Organizer     Attendee
 	WholeDayEvent bool
 	ExDates       []time.Time
+	StartTimezone *time.Location
+	EndTimezone   *time.Location
 }
 
 type byDate []Event

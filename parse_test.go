@@ -125,7 +125,7 @@ func TestParseEventDate(t *testing.T) {
 
 	expected := time.Date(2015, time.Month(9), 30, 15, 0, 0, 0, loc)
 	dataStart := "DTSTART;TZID=Europe/Madrid:20150930T150000\n"
-	result, err := parseEventDate("DTSTART", dataStart)
+	result, _, err := parseEventDate("DTSTART", dataStart)
 	if err != nil {
 		t.FailNow()
 	}
@@ -135,7 +135,7 @@ func TestParseEventDate(t *testing.T) {
 	}
 
 	dataEnd := "DTEND;TZID=Europe/Madrid:20150930T150000\n"
-	result, err = parseEventDate("DTEND", dataEnd)
+	result, _, err = parseEventDate("DTEND", dataEnd)
 	if err != nil {
 		t.FailNow()
 	}
@@ -153,7 +153,7 @@ func TestParseEventRecurrenceID(t *testing.T) {
 	expected := time.Date(2015, time.Month(10), 13, 15, 0, 0, 0, loc)
 	data := "RECURRENCE-ID;TZID=Europe/Madrid:20151013T150000\n"
 
-	result, err := parseEventRecurrenceID(data)
+	result, _, err := parseEventRecurrenceID(data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -190,7 +190,7 @@ END:VEVENT
 `
 
 func TestParseEventDateWholeDay(t *testing.T) {
-	tResult, err := parseEventDate("DTSTART", testWholeDayEvent)
+	tResult, _, err := parseEventDate("DTSTART", testWholeDayEvent)
 	if err != nil {
 		t.Error(err)
 	}
