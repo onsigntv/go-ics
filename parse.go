@@ -662,23 +662,27 @@ func parseExcludedDates(eventData string, convertDatesToUTC bool) ([]time.Time, 
 			return nil, err
 		}
 
-		dt := strings.TrimSpace(e[2])
-		if !strings.Contains(dt, "Z") {
-			dt += "Z"
+		exDates := strings.Split(e[2], ",")
+
+		for _, dateStr := range exDates {
+			dt := strings.TrimSpace(dateStr)
+			if !strings.Contains(dt, "Z") {
+				dt += "Z"
+			}
+
+			t, err := time.Parse(icsFormat, dt)
+			if err != nil {
+				continue
+			}
+
+			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), tz)
+
+			if convertDatesToUTC {
+				t = t.UTC()
+			}
+
+			dates = append(dates, t)
 		}
-
-		t, err := time.Parse(icsFormat, dt)
-		if err != nil {
-			return nil, err
-		}
-
-		t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), tz)
-
-		if convertDatesToUTC {
-			t = t.UTC()
-		}
-
-		dates = append(dates)
 	}
 
 	return dates, nil
